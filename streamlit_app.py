@@ -164,89 +164,79 @@ def main():
         talk_time = st.number_input("Talk Time", min_value=0, help="Autonomie en mode conversation (en heures).")
         three_g = st.selectbox("3G", [0, 1], help="Indique si le téléphone prend en charge la 3G.")
         touch_screen = st.selectbox("Touch Screen", [0, 1], help="Indique si le téléphone a un écran tactile.")
-        wifi = st.selectbox("WiFi", [0, 1], help="Indique si le téléphone prend en charge le WiFi.")
+        wifi = st.selectbox("WiFi", [0, 1], help="Indique si le téléphone dispose du Wi-Fi.")
 
-        # Créer un dictionnaire avec les valeurs saisies par l'utilisateur
-        user_input = {
-            "battery_power": battery_power,
-            "blue": blue,
-            "clock_speed": clock_speed,
-            "dual_sim": dual_sim,
-            "fc": fc,
-            "four_g": four_g,
-            "int_memory": int_memory,
-            "m_dep": m_dep,
-            "mobile_wt": mobile_wt,
-            "n_cores": n_cores,
-            "pc": pc,
-            "px_height": px_height,
-            "px_width": px_width,
-            "ram": ram,
-            "sc_h": sc_h,
-            "sc_w": sc_w,
-            "talk_time": talk_time,
-            "three_g": three_g,
-            "touch_screen": touch_screen,
-            "wifi": wifi,
-        }
+        # Créer un tableau avec les caractéristiques saisies
+        features = pd.DataFrame({
+            "battery_power": [battery_power],
+            "blue": [blue],
+            "clock_speed": [clock_speed],
+            "dual_sim": [dual_sim],
+            "fc": [fc],
+            "four_g": [four_g],
+            "int_memory": [int_memory],
+            "m_dep": [m_dep],
+            "mobile_wt": [mobile_wt],
+            "n_cores": [n_cores],
+            "pc": [pc],
+            "px_height": [px_height],
+            "px_width": [px_width],
+            "ram": [ram],
+            "sc_h": [sc_h],
+            "sc_w": [sc_w],
+            "talk_time": [talk_time],
+            "three_g": [three_g],
+            "touch_screen": [touch_screen],
+            "wifi": [wifi]
+        })
 
-        # Convertir le dictionnaire en DataFrame
-        input_df = pd.DataFrame(user_input, index=[0])
-
-        # Vérifier si le modèle est chargé
+        # Si le modèle est déjà entraîné et disponible dans session_state, prédire
         if st.session_state.model:
-            model = st.session_state.model
-            prediction = predict_price(model, input_df)
-            st.write(f"La plage de prix prédite pour ce téléphone est : **{prediction}**")
-
+            prediction = predict_price(st.session_state.model, features)
+            st.write(f"**Plage de prix prédite :** {prediction}")
         else:
-            st.write("Modèle non disponible. Veuillez entraîner un modèle dans l'onglet 'Évaluation du modèle'.")
+            st.error("Aucun modèle disponible. Entraînez un modèle d'abord dans l'onglet 'Évaluation du modèle'.")
 
-    if app_mode == "Évaluation du modèle":
+    elif app_mode == "Évaluation du modèle":
+        # Entrainer le modèle Random Forest
         st.title("Évaluation du Modèle")
         st.markdown(
             """
-            Cette section vous permet d'évaluer la performance du modèle en termes de précision et d'autres métriques.
+            Dans cette section, vous pouvez entraîner un modèle pour prédire la plage de prix des téléphones. 
+            Une fois le modèle entraîné, vous pourrez le tester et obtenir des évaluations détaillées.
             """
         )
 
-        # Charger les données
+        # Entraîner le modèle Random Forest
         train_df, test_df = load_data()
-
-        # Prétraiter les données
-        X, y, test_df_processed = preprocess_data(train_df, test_df)
+        X, y, _ = preprocess_data(train_df, test_df)
+        model, accuracy, classification_rep, confusion_mat = train_random_forest(X, y)
         
-        if X is None or y is None:
-            st.stop()  # Arrêter l'exécution si les données sont incorrectes
+        # Sauvegarder le modèle dans session_state pour l'utiliser dans l'onglet de prédiction
+        st.session_state.model = model
+        st.session_state.accuracy = accuracy
+        st.session_state.classification_rep = classification_rep
+        st.session_state.confusion_mat = confusion_mat
 
-        # Entraîner les modèles
-        st.write("### Entraînement du modèle Random Forest")
-        model_rf, accuracy_rf, classification_rep_rf, confusion_mat_rf = train_random_forest(X, y)
-        st.write(f"Précision du modèle Random Forest : {accuracy_rf * 100:.2f}%")
-        st.write("### Rapport de Classification - Random Forest")
-        st.write(classification_rep_rf)
-        st.write("### Matrice de Confusion - Random Forest")
-        fig_rf, ax_rf = plt.subplots(figsize=(8, 6))
-        sns.heatmap(confusion_mat_rf, annot=True, fmt="d", cmap="Blues", xticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"], yticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"])
-        st.pyplot(fig_rf)
+        # Afficher la précision du modèle
+        st.write(f"**Précision du modèle Random Forest :** {accuracy * 100:.2f}%")
 
-        # Visualisation de l'importance des caractéristiques pour Random Forest
-        st.write("### Importance des Caractéristiques - Random Forest")
-        plot_feature_importance(model_rf)
+        # Afficher le rapport de classification
+        st.write("### Rapport de Classification")
+        st.text(classification_rep)
 
-        st.write("### Entraînement du modèle de Régression Logistique")
-        model_lr, accuracy_lr, classification_rep_lr, confusion_mat_lr = train_logistic_regression(X, y)
-        st.write(f"Précision du modèle de Régression Logistique : {accuracy_lr * 100:.2f}%")
-        st.write("### Rapport de Classification - Régression Logistique")
-        st.write(classification_rep_lr)
-        st.write("### Matrice de Confusion - Régression Logistique")
-        fig_lr, ax_lr = plt.subplots(figsize=(8, 6))
-        sns.heatmap(confusion_mat_lr, annot=True, fmt="d", cmap="Blues", xticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"], yticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"])
-        st.pyplot(fig_lr)
+        # Afficher la matrice de confusion
+        st.write("### Matrice de Confusion")
+        fig, ax = plt.subplots(figsize=(6, 6))
+        sns.heatmap(confusion_mat, annot=True, fmt="d", cmap="Blues", xticklabels=np.unique(y), yticklabels=np.unique(y))
+        plt.xlabel("Prédictions")
+        plt.ylabel("Réels")
+        st.pyplot(fig)
 
-        # Enregistrer les modèles dans session_state pour prédictions ultérieures
-        st.session_state.model_rf = model_rf
-        st.session_state.model_lr = model_lr
+        # Afficher l'importance des caractéristiques
+        st.write("### Importance des Caractéristiques")
+        plot_feature_importance(model)
+
 
 if __name__ == "__main__":
     main()
