@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Charger les données avec le système de mise en cache
 @st.cache_data
@@ -45,8 +47,8 @@ def preprocess_data(train_df, test_df):
     
     return X, y, test_df
 
-# Entraîner le modèle
-def train_model(X, y):
+# Entraîner le modèle Random Forest
+def train_random_forest(X, y):
     # Diviser les données en entraînement et test
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -64,11 +66,45 @@ def train_model(X, y):
     
     return model, accuracy, classification_rep, confusion_mat
 
+# Entraîner le modèle de régression logistique
+def train_logistic_regression(X, y):
+    # Diviser les données en entraînement et test
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Créer et entraîner le modèle
+    model = LogisticRegression(max_iter=1000, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Prédictions sur l'ensemble de test
+    y_pred = model.predict(X_test)
+
+    # Calcul de la précision et autres métriques
+    accuracy = accuracy_score(y_test, y_pred)
+    classification_rep = classification_report(y_test, y_pred, output_dict=True)
+    confusion_mat = confusion_matrix(y_test, y_pred)
+    
+    return model, accuracy, classification_rep, confusion_mat
+
 # Prédiction de la plage de prix pour un téléphone donné
 def predict_price(model, features):
     # Assurez-vous que les colonnes sont bien alignées avec le modèle
     prediction = model.predict(features)
     return prediction[0]
+
+# Visualiser l'importance des caractéristiques pour Random Forest
+def plot_feature_importance(model):
+    """
+    Fonction pour afficher l'importance des caractéristiques du modèle RandomForest.
+    """
+    feature_importances = model.feature_importances_
+    indices = np.argsort(feature_importances)[::-1]
+
+    plt.figure(figsize=(10, 6))
+    plt.title("Importance des Caractéristiques")
+    plt.barh(range(len(indices)), feature_importances[indices], align="center")
+    plt.yticks(range(len(indices)), np.array(model.feature_names_in_)[indices])
+    plt.xlabel("Importance")
+    st.pyplot(plt)
 
 # Fonction principale
 def main():
@@ -154,51 +190,63 @@ def main():
             "wifi": wifi,
         }
 
-        # Convertir les valeurs saisies par l'utilisateur en DataFrame
-        user_input_df = pd.DataFrame(user_input, index=[0])
+        # Convertir le dictionnaire en DataFrame
+        input_df = pd.DataFrame(user_input, index=[0])
 
-        # Si le modèle est disponible, faire la prédiction
+        # Vérifier si le modèle est chargé
         if st.session_state.model:
-            prediction = predict_price(st.session_state.model, user_input_df)
-            st.write(f"La plage de prix prédite est : {prediction}")
-        else:
-            st.error("Le modèle n'est pas encore entraîné. Veuillez d'abord évaluer le modèle.")
+            model = st.session_state.model
+            prediction = predict_price(model, input_df)
+            st.write(f"La plage de prix prédite pour ce téléphone est : **{prediction}**")
 
-    elif app_mode == "Évaluation du modèle":
+        else:
+            st.write("Modèle non disponible. Veuillez entraîner un modèle dans l'onglet 'Évaluation du modèle'.")
+
+    if app_mode == "Évaluation du modèle":
         st.title("Évaluation du Modèle")
         st.markdown(
             """
-            Cette section vous permet d'évaluer le modèle d'apprentissage automatique entraîné
-            en calculant la précision, en affichant le rapport de classification et la matrice de confusion.
+            Cette section vous permet d'évaluer la performance du modèle en termes de précision et d'autres métriques.
             """
         )
 
-        # Charger les données et entraîner le modèle
+        # Charger les données
         train_df, test_df = load_data()
+
+        # Prétraiter les données
         X, y, test_df_processed = preprocess_data(train_df, test_df)
         
         if X is None or y is None:
             st.stop()  # Arrêter l'exécution si les données sont incorrectes
 
-        model, accuracy, classification_rep, confusion_mat = train_model(X, y)
-        
-        # Enregistrer le modèle dans la session
-        st.session_state.model = model
-        st.session_state.accuracy = accuracy
-        st.session_state.classification_rep = classification_rep
-        st.session_state.confusion_mat = confusion_mat
+        # Entraîner les modèles
+        st.write("### Entraînement du modèle Random Forest")
+        model_rf, accuracy_rf, classification_rep_rf, confusion_mat_rf = train_random_forest(X, y)
+        st.write(f"Précision du modèle Random Forest : {accuracy_rf * 100:.2f}%")
+        st.write("### Rapport de Classification - Random Forest")
+        st.write(classification_rep_rf)
+        st.write("### Matrice de Confusion - Random Forest")
+        fig_rf, ax_rf = plt.subplots(figsize=(8, 6))
+        sns.heatmap(confusion_mat_rf, annot=True, fmt="d", cmap="Blues", xticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"], yticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"])
+        st.pyplot(fig_rf)
 
-        # Afficher les résultats
-        st.write(f"### Précision du modèle: {accuracy:.2f}")
-        st.write("### Rapport de classification:")
-        st.text(classification_rep)
-        
-        st.write("### Matrice de confusion:")
-        fig, ax = plt.subplots()
-        sns.heatmap(confusion_mat, annot=True, fmt='d', cmap='Blues', ax=ax)
-        plt.xlabel('Prédictions')
-        plt.ylabel('Réel')
-        st.pyplot(fig)
+        # Visualisation de l'importance des caractéristiques pour Random Forest
+        st.write("### Importance des Caractéristiques - Random Forest")
+        plot_feature_importance(model_rf)
 
-if __name__ == '__main__':
+        st.write("### Entraînement du modèle de Régression Logistique")
+        model_lr, accuracy_lr, classification_rep_lr, confusion_mat_lr = train_logistic_regression(X, y)
+        st.write(f"Précision du modèle de Régression Logistique : {accuracy_lr * 100:.2f}%")
+        st.write("### Rapport de Classification - Régression Logistique")
+        st.write(classification_rep_lr)
+        st.write("### Matrice de Confusion - Régression Logistique")
+        fig_lr, ax_lr = plt.subplots(figsize=(8, 6))
+        sns.heatmap(confusion_mat_lr, annot=True, fmt="d", cmap="Blues", xticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"], yticklabels=["Classe 0", "Classe 1", "Classe 2", "Classe 3"])
+        st.pyplot(fig_lr)
+
+        # Enregistrer les modèles dans session_state pour prédictions ultérieures
+        st.session_state.model_rf = model_rf
+        st.session_state.model_lr = model_lr
+
+if __name__ == "__main__":
     main()
